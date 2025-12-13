@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商務引薦自動排版系統 (原生 CSS 版)</title>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Html2Canvas for Screenshot -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        /* --- Reset & Base Styles --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f0f2f5;
+            overflow: hidden; /* Prevent scrolling in presentation */
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+
+        /* --- Layout Containers --- */
+        #capture-area {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            padding-top: 4rem;
+            background-color: #f0f2f5;
+        }
+
+        .container-v1 {
+            width: 100%;
+            max-width: 1200px; /* max-w-7xl approx */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: opacity 0.3s ease;
+        }
+
+        .cards-wrapper {
+            width: 100%;
+            display: flex;
+            gap: 2rem;
+            align-items: flex-start;
+            justify-content: center;
+            margin-top: 2rem;
+        }
+
+        /* --- Card Styling --- */
+        .card-container {
+            flex: 1;
+            max-width: 36rem; /* max-w-xl */
+            position: relative;
+        }
+
+        .card-number {
+            position: absolute;
+            top: -4rem;
+            left: 1rem;
+            font-size: 3rem;
+            font-weight: bold;
+            color: #9ca3af; /* gray-400 */
+        }
+
+        .card {
+            background-color: white;
+            border-radius: 1.5rem; /* rounded-3xl */
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* --- Card Content --- */
+        .card-header {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .profile-mask {
+            width: 10rem; /* w-40 */
+            height: 10rem; /* h-40 */
+            flex-shrink: 0;
+            border-radius: 20px;
+            overflow: hidden;
+            background-color: #e0e0e0;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .profile-mask img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .header-info {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding-top: 2rem;
+        }
+
+        .name-text {
+            font-size: 2.25rem; /* text-4xl */
+            font-weight: 700;
+            color: #1f2937; /* gray-800 */
+            margin-bottom: 0.5rem;
+            letter-spacing: 0.025em;
+        }
+
+        .inviter-text {
+            font-size: 1.25rem; /* text-xl */
+            color: #6b7280; /* gray-500 */
+            font-weight: 500;
+        }
+
+        .info-block {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 1.125rem; /* text-lg */
+            line-height: 1.625;
+        }
+
+        .label-text {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .industry-text {
+            color: #d32f2f;
+            font-weight: 700;
+        }
+        
+        .content-text {
+            color: #4b5563; /* gray-600 */
+        }
+
+        /* --- Footer --- */
+        .footer-next {
+            margin-top: 3rem;
+            width: 100%;
+            text-align: center;
+        }
+
+        .next-text {
+            font-size: 1.5rem; /* text-2xl */
+        }
+
+        .next-label {
+            color: #d32f2f;
+            font-weight: 700;
+        }
+
+        .next-names {
+            color: #4b5563;
+            font-weight: 700;
+            margin-left: 0.5rem;
+        }
+
+        /* --- Layout V2 (Overview) --- */
+        #layout-v2 {
+            width: 100%;
+            max-width: 1600px;
+            height: 100%;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .grid-container {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 1.5rem;
+            padding: 2rem 1rem;
+        }
+
+        .v2-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            padding: 0 0.25rem;
+        }
+
+        .v2-name {
+            color: #4b5563;
+            font-weight: 700;
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+            text-align: center;
+            line-height: 1.4;
+            display: block;
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .v2-photo-mask {
+            width: 100%;
+            aspect-ratio: 1/1;
+            border-radius: 1rem;
+            overflow: hidden;
+            background-color: #e0e0e0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .v2-photo-mask img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .v2-industry {
+            color: #d32f2f;
+            font-weight: 700;
+            font-size: 1rem;
+            margin-top: 0.5rem;
+            text-align: center;
+            line-height: 1.4;
+            display: block;
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* --- UI Controls --- */
+        .settings-btn {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            background-color: #1f2937;
+            color: white;
+            padding: 0.5rem;
+            border-radius: 9999px;
+            cursor: pointer;
+            z-index: 50;
+            opacity: 0.3;
+            transition: opacity 0.2s;
+            border: none;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .settings-btn:hover {
+            opacity: 1;
+            background-color: #374151;
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0,0,0,0.95);
+            color: white;
+            padding: 1.5rem;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+            z-index: 50;
+            border-top: 1px solid #444;
+            box-sizing: border-box;
+        }
+        
+        #controls.visible {
+            transform: translateY(0);
+        }
+
+        .controls-inner {
+            display: flex;
+            gap: 1.5rem;
+            align-items: flex-start;
+        }
+
+        .col {
+            padding-right: 1.5rem;
+            border-right: 1px solid #374151;
+            display: flex;
+            flex-col: column;
+            gap: 0.5rem;
+        }
+        .col:last-child {
+            border-right: none;
+            padding-right: 0;
+        }
+        .w-33 { width: 33.33%; }
+
+        h3 {
+            font-weight: bold;
+            margin-bottom: 0.75rem;
+            font-size: 1.125rem;
+            color: #d1d5db;
+        }
+        
+        h3.green-title { color: #4ade80; }
+
+        input[type="text"] {
+            width: 100%;
+            background-color: #1f2937;
+            border: 1px solid #4b5563;
+            border-radius: 0.25rem;
+            padding: 0.5rem;
+            color: white;
+            font-size: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .status-msg {
+            font-size: 0.75rem;
+            height: 1rem;
+            margin-top: 0.25rem;
+        }
+        .status-loading { color: #facc15; }
+        .status-success { color: #4ade80; }
+        .status-error { color: #f87171; }
+
+        /* --- Buttons --- */
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            text-align: center;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            border: none;
+            color: white;
+            font-size: 1rem;
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+
+        .btn-sm { font-size: 0.75rem; }
+
+        .btn-green { background-color: #10b981; }
+        .btn-green:hover { background-color: #059669; }
+        
+        .btn-blue { background-color: #3b82f6; }
+        .btn-blue:hover { background-color: #2563eb; }
+
+        .btn-gray { background-color: #4b5563; }
+        .btn-gray:hover { background-color: #374151; }
+
+        .btn-google { background-color: #ea4335; }
+        .btn-google:hover { background-color: #dc2626; }
+        
+        .btn-purple { background-color: #8b5cf6; }
+        .btn-purple:hover { background-color: #7c3aed; }
+        
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+            width: 100%;
+        }
+
+        .btn-group .btn {
+            flex: 1;
+        }
+
+        /* --- Modal --- */
+        #post-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background-color: #1f2937;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            width: 100%;
+            max-width: 42rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            color: white;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: #9ca3af;
+            cursor: pointer;
+            font-size: 1.5rem;
+        }
+        .close-btn:hover { color: white; }
+
+        .edit-area {
+            width: 100%;
+            background: #2d2d2d;
+            color: #e5e7eb;
+            font-family: monospace;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            resize: none;
+            border: 1px solid #4b5563;
+            height: 16rem;
+            margin-bottom: 1rem;
+        }
+        .edit-area:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #3498db;
+            width: 16px;
+            height: 16px;
+            animation: spin 2s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Utility Helpers */
+        .hidden { display: none !important; }
+        .flex { display: flex !important; }
+        .invisible { visibility: hidden; }
+        .visible { visibility: visible; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Capture Area -->
+    <div id="capture-area">
+        
+        <!-- LAYOUT V1: Detail View (2 Cards) -->
+        <div id="layout-v1" class="container-v1">
+            <div class="cards-wrapper">
+                <!-- Left Card -->
+                <div class="card-container">
+                    <div class="card-number" id="idx-0">01</div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="profile-mask">
+                                <img id="img-0" src="" alt="Profile">
+                            </div>
+                            <div class="header-info">
+                                <h2 class="name-text" id="name-0">姓名</h2>
+                                <p class="inviter-text">邀請人：<span id="inviter-0">---</span></p>
+                            </div>
+                        </div>
+                        <div class="info-block">
+                            <div><span class="label-text">產業別：</span><span class="industry-text" id="industry-0">---</span></div>
+                            <div><span class="label-text">公司名稱：</span><span class="content-text" id="company-0">---</span></div>
+                            <div><span class="label-text">希望合作的產業別：</span><span class="content-text" id="coop-0">---</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Card -->
+                <div class="card-container">
+                    <div class="card-number" id="idx-1">02</div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="profile-mask">
+                                <img id="img-1" src="" alt="Profile">
+                            </div>
+                            <div class="header-info">
+                                <h2 class="name-text" id="name-1">姓名</h2>
+                                <p class="inviter-text">邀請人：<span id="inviter-1">---</span></p>
+                            </div>
+                        </div>
+                        <div class="info-block">
+                            <div><span class="label-text">產業別：</span><span class="industry-text" id="industry-1">---</span></div>
+                            <div><span class="label-text">公司名稱：</span><span class="content-text" id="company-1">---</span></div>
+                            <div><span class="label-text">希望合作的產業別：</span><span class="content-text" id="coop-1">---</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Footer Next One -->
+            <div class="footer-next">
+                <div class="next-text">
+                    <span class="next-label">>>Next one:</span>
+                    <span class="next-names" id="next-names">---</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- LAYOUT V2: Summary View (Grid of 7) -->
+        <div id="layout-v2">
+            <div id="v2-container" class="grid-container">
+                <!-- Template for JS to populate -->
+            </div>
+        </div>
+
+    </div>
+    <!-- End Capture Area -->
+
+    <!-- Toggle Button -->
+    <button onclick="toggleControls()" class="settings-btn">
+        <i class="fa-solid fa-gear"></i>
+    </button>
+
+    <!-- Controls Panel -->
+    <div id="controls">
+        <div class="controls-inner">
+            <!-- Left: Google Sheet Settings -->
+            <div class="col w-33">
+                <h3 class="green-title"><i class="fa-solid fa-file-csv"></i> Google Sheet 同步</h3>
+                <div>
+                    <label style="display:block; font-size: 0.75rem; color: #9ca3af; margin-bottom: 0.25rem;">Sheet URL (權限需設為: 知道連結者皆可檢視)</label>
+                    <input type="text" id="sheet-url" 
+                           placeholder="https://docs.google.com/spreadsheets/d/.../edit..."
+                           value="https://docs.google.com/spreadsheets/d/1vJVk6GCKLAFcQ0lAaMk2wX2iehWqHEBaAoYei9IV2zc/edit?gid=48048883#gid=48048883">
+                </div>
+                <button onclick="fetchGoogleSheet()" id="btn-fetch" class="btn btn-google">
+                    <i class="fa-solid fa-cloud-arrow-down"></i> 載入 Sheet 資料
+                </button>
+                <div id="fetch-status" class="status-msg"></div>
+            </div>
+
+            <!-- Middle: Layout & Export -->
+            <div class="col w-33">
+                <h3>顯示模式 & 匯出</h3>
+                
+                <div class="btn-group">
+                    <button onclick="switchLayout('v1')" class="btn btn-blue" id="btn-v1">
+                        <i class="fa-solid fa-user-group"></i> 詳細
+                    </button>
+                    <button onclick="switchLayout('v2')" class="btn btn-gray" id="btn-v2">
+                        <i class="fa-solid fa-users"></i> 總覽
+                    </button>
+                </div>
+
+                <div class="btn-group" style="margin-top: 0.5rem;">
+                     <button onclick="openPostModal()" class="btn btn-green btn-sm">
+                        <i class="fa-brands fa-line"></i> 貼文
+                    </button>
+                    <button onclick="exportToPng()" class="btn btn-purple btn-sm">
+                        <i class="fa-solid fa-camera"></i> PNG
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right: Controls -->
+            <div class="col w-33">
+                <h3>控制台</h3>
+                <div class="btn-group">
+                    <button onclick="prevSlide()" class="btn btn-gray"><i class="fa-solid fa-chevron-left"></i> 上一頁</button>
+                    <button onclick="nextSlide()" class="btn btn-gray">下一頁 <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+                <div style="margin-top: auto; font-size: 0.75rem; color: #9ca3af;">
+                    鍵盤操作： → 下一頁 / ← 上一頁
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Post Generation Modal -->
+    <div id="post-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="font-size: 1.25rem; font-weight: bold; margin:0; color: white;">📋 社群貼文產生器</h3>
+                <button onclick="closePostModal()" class="close-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p style="color: #9ca3af; font-size: 0.875rem; margin-bottom: 0.5rem;">以下已將所有資料轉換為貼文格式，請全選複製：</p>
+            <textarea id="post-output" class="edit-area"></textarea>
+            <div class="modal-footer">
+                <button onclick="copyPostText()" class="btn btn-green" style="width: auto;">
+                    <i class="fa-solid fa-copy"></i> 一鍵複製
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 預設資料
+        let presentationData = [
+             {
+                "id": "03",
+                "name": "張哲偉",
+                "inviter": "廖傑輝",
+                "industry": "百香果產業鏈",
+                "company": "鮮田股份有限公司",
+                "coop": "食品廠/行銷通路/戰略投資人/連鎖飲品總部",
+                "photo": "https://api.dicebear.com/7.x/avataaars/svg?seed=Zhang&gender=male"
+            },
+            {
+                "id": "04",
+                "name": "陳信裕",
+                "inviter": "陳冠維",
+                "industry": "汽車鑰匙皮套",
+                "company": "自行創業",
+                "coop": "汽車業務.建設公司",
+                "photo": "https://api.dicebear.com/7.x/avataaars/svg?seed=Chen&gender=male"
+            }
+        ];
+
+        let currentIndex = 0;
+        let currentLayout = 'v1'; // 'v1' or 'v2'
+
+        window.onload = function() {
+            const savedData = localStorage.getItem('presentationData');
+            const savedUrl = localStorage.getItem('googleSheetUrl');
+            
+            if (savedUrl) {
+                document.getElementById('sheet-url').value = savedUrl;
+            }
+
+            if (savedData) {
+                presentationData = JSON.parse(savedData);
+            }
+            
+            renderSlide();
+            
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowRight') nextSlide();
+                if (e.key === 'ArrowLeft') prevSlide();
+            });
+        };
+
+        // --- Layout Switching ---
+        function switchLayout(layout) {
+            currentLayout = layout;
+            currentIndex = 0; 
+            
+            const btnV1 = document.getElementById('btn-v1');
+            const btnV2 = document.getElementById('btn-v2');
+            const layoutV1 = document.getElementById('layout-v1');
+            const layoutV2 = document.getElementById('layout-v2');
+            
+            if (layout === 'v1') {
+                layoutV1.style.display = 'flex';
+                layoutV2.style.display = 'none';
+                
+                // Update Button Styles manually
+                btnV1.classList.remove('btn-gray');
+                btnV1.classList.add('btn-blue');
+                btnV2.classList.remove('btn-blue');
+                btnV2.classList.add('btn-gray');
+            } else {
+                layoutV1.style.display = 'none';
+                layoutV2.style.display = 'flex';
+                
+                btnV1.classList.remove('btn-blue');
+                btnV1.classList.add('btn-gray');
+                btnV2.classList.remove('btn-gray');
+                btnV2.classList.add('btn-blue');
+            }
+            renderSlide();
+        }
+
+        // --- Google Sheet Logic ---
+        function parseGoogleSheetUrl(url) {
+            const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            const id = idMatch ? idMatch[1] : null;
+            const gidMatch = url.match(/[#&?]gid=([0-9]+)/);
+            const gid = gidMatch ? gidMatch[1] : "0";
+            return { id, gid };
+        }
+
+        async function fetchGoogleSheet() {
+            const url = document.getElementById('sheet-url').value.trim();
+            const statusEl = document.getElementById('fetch-status');
+            const btn = document.getElementById('btn-fetch');
+            
+            const { id, gid } = parseGoogleSheetUrl(url);
+
+            if (!id) {
+                alert('無法解析 Google Sheet ID，請確認網址格式正確。');
+                return;
+            }
+
+            localStorage.setItem('googleSheetUrl', url);
+
+            btn.innerHTML = '<div class="loader"></div> 載入中...';
+            btn.disabled = true;
+            statusEl.innerText = '正在連線到 Google...';
+            statusEl.className = 'status-msg status-loading';
+
+            // Use Google CSV Export
+            const googleCsvUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+            
+            // Fallback strategy
+            const proxies = [
+                (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
+                (target) => `https://corsproxy.io/?${encodeURIComponent(target)}`
+            ];
+
+            let csvText = null;
+
+            for (const proxyGen of proxies) {
+                try {
+                    const proxyUrl = proxyGen(googleCsvUrl);
+                    console.log("Trying proxy:", proxyUrl);
+                    const response = await fetch(proxyUrl);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    csvText = await response.text();
+                    
+                    if (csvText && csvText.trim().startsWith("<")) {
+                         throw new Error("Received HTML instead of CSV");
+                    }
+
+                    if (csvText) break; // Success
+                } catch (e) {
+                    console.warn("Proxy failed:", e);
+                }
+            }
+
+            if (!csvText) {
+                statusEl.innerText = '讀取失敗: 請確認權限';
+                statusEl.className = 'status-msg status-error';
+                btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> 載入 Sheet 資料';
+                btn.disabled = false;
+                alert("讀取失敗！可能原因：\n1. Google Sheet 權限未設為「知道連結者皆可檢視」\n2. 網路封鎖了代理伺服器");
+                return;
+            }
+
+            // Parse Data
+            try {
+                Papa.parse(csvText, {
+                    header: false, 
+                    complete: function(results) {
+                        const rawData = results.data;
+                        
+                        let headerRowIndex = -1;
+                        for(let i=0; i<Math.min(20, rawData.length); i++) {
+                            const rowStr = JSON.stringify(rawData[i]);
+                            if (rowStr.includes("姓名") || rowStr.includes("Name")) {
+                                headerRowIndex = i;
+                                break;
+                            }
+                        }
+
+                        if (headerRowIndex === -1) throw new Error("找不到含有「姓名」的標題列");
+
+                        const headers = rawData[headerRowIndex].map(h => h.trim());
+                        const findCol = (keywords) => headers.findIndex(h => keywords.some(k => h.includes(k)));
+                        
+                        const colMap = {
+                            name: findCol(["姓名", "Name"]),
+                            inviter: findCol(["邀請人", "Inviter"]),
+                            industry: findCol(["產業", "Industry", "行業"]),
+                            company: findCol(["公司", "Company"]),
+                            coop: findCol(["合作", "Coop", "對象"]),
+                            photo: findCol(["照片", "Photo", "Image"])
+                        };
+
+                        if (colMap.name === -1) throw new Error("找不到「姓名」欄位");
+
+                        const newData = [];
+                        let idCounter = 1;
+
+                        for(let i = headerRowIndex + 1; i < rawData.length; i++) {
+                            const row = rawData[i];
+                            if (!row[colMap.name] || row[colMap.name].trim() === "") continue;
+
+                            let photoUrl = colMap.photo > -1 ? row[colMap.photo] : "";
+                            
+                            newData.push({
+                                id: String(idCounter).padStart(2, '0'),
+                                name: row[colMap.name],
+                                inviter: colMap.inviter > -1 ? row[colMap.inviter] : "",
+                                industry: colMap.industry > -1 ? row[colMap.industry] : "",
+                                company: colMap.company > -1 ? row[colMap.company] : "",
+                                coop: colMap.coop > -1 ? row[colMap.coop] : "",
+                                photo: photoUrl
+                            });
+                            idCounter++;
+                        }
+
+                        if (newData.length === 0) throw new Error("沒有抓取到有效資料");
+
+                        presentationData = newData;
+                        localStorage.setItem('presentationData', JSON.stringify(presentationData));
+                        
+                        statusEl.innerText = `成功載入 ${newData.length} 筆資料！`;
+                        statusEl.className = 'status-msg status-success';
+                        
+                        currentIndex = 0;
+                        renderSlide();
+                        setTimeout(() => toggleControls(), 1500);
+                    },
+                    error: function(err) { throw err; }
+                });
+
+            } catch (error) {
+                console.error(error);
+                statusEl.innerText = '解析失敗: ' + error.message;
+                statusEl.className = 'status-msg status-error';
+                alert("資料解析錯誤：" + error.message);
+            } finally {
+                btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> 載入 Sheet 資料';
+                btn.disabled = false;
+            }
+        }
+
+        // --- Post Generation Logic ---
+        function generatePostText() {
+            let text = "";
+            presentationData.forEach(p => {
+                text += `👨 ${p.name}｜${p.company} 👀\n`;
+                text += `產業別：${p.industry} 💡\n`;
+                text += `合作對象：${p.coop} 📍\n`;
+                text += `邀請人：${p.inviter}\n`;
+                text += `--------------------------------\n`; // Separator
+            });
+            return text;
+        }
+
+        function openPostModal() {
+            const text = generatePostText();
+            document.getElementById('post-output').value = text;
+            const modal = document.getElementById('post-modal');
+            modal.style.display = 'flex'; // Use flex to align center
+            toggleControls(); 
+        }
+
+        function closePostModal() {
+            document.getElementById('post-modal').style.display = 'none';
+        }
+
+        function copyPostText() {
+            const textarea = document.getElementById('post-output');
+            textarea.select();
+            document.execCommand('copy');
+            alert("已複製到剪貼簿！");
+        }
+
+        function exportToPng() {
+            const element = document.getElementById("capture-area");
+            const controls = document.getElementById("controls");
+            const btn = document.querySelector(".settings-btn");
+            
+            // Hide UI
+            controls.style.visibility = 'hidden';
+            btn.style.visibility = 'hidden';
+
+            html2canvas(element, {
+                backgroundColor: "#f0f2f5", 
+                scale: 2,
+                scrollY: -window.scrollY 
+            }).then(canvas => {
+                // Restore UI
+                controls.style.visibility = '';
+                btn.style.visibility = '';
+                const link = document.createElement('a');
+                link.download = `BNI_Presentation.png`;
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }
+
+        // --- Core Render Logic ---
+        function renderSlide() {
+            if (currentLayout === 'v1') {
+                renderV1();
+            } else {
+                renderV2();
+            }
+        }
+
+        function renderV1() {
+            const person1 = presentationData[currentIndex];
+            const person2 = presentationData[currentIndex + 1];
+
+            // Card 1
+            if (person1) {
+                updateCardV1(0, person1);
+                document.getElementById('idx-0').innerText = person1.id || (currentIndex + 1).toString().padStart(2, '0');
+            }
+
+            // Card 2
+            if (person2) {
+                // Make Card 2 Container visible
+                document.getElementById('idx-1').parentElement.classList.remove('invisible');
+                document.getElementById('idx-1').parentElement.classList.add('visible');
+                
+                updateCardV1(1, person2);
+                document.getElementById('idx-1').innerText = person2.id || (currentIndex + 2).toString().padStart(2, '0');
+            } else {
+                // Make Card 2 Container invisible
+                document.getElementById('idx-1').parentElement.classList.remove('visible');
+                document.getElementById('idx-1').parentElement.classList.add('invisible');
+            }
+
+            // Footer Next Logic
+            const next1 = presentationData[currentIndex + 2];
+            const next2 = presentationData[currentIndex + 3];
+            let nextText = "";
+            if (next1) {
+                nextText = next1.name;
+                if (next2) nextText += " / " + next2.name;
+            } else {
+                nextText = "產業分組 / END"; 
+            }
+            document.getElementById('next-names').innerText = nextText;
+        }
+
+        function updateCardV1(idx, data) {
+            document.getElementById(`name-${idx}`).innerText = data.name || "";
+            document.getElementById(`inviter-${idx}`).innerText = data.inviter || "---";
+            document.getElementById(`industry-${idx}`).innerText = data.industry || "---";
+            document.getElementById(`company-${idx}`).innerText = data.company || "---";
+            document.getElementById(`coop-${idx}`).innerText = data.coop || "---";
+            
+            const imgEl = document.getElementById(`img-${idx}`);
+            let photoSrc = data.photo;
+            if (!photoSrc || photoSrc.trim() === "") {
+                photoSrc = `https://ui-avatars.com/api/?name=${data.name}&background=random&size=200&font-size=0.33`;
+            }
+            imgEl.src = photoSrc;
+            imgEl.onerror = function() {
+                this.src = `https://ui-avatars.com/api/?name=${data.name}&background=random&size=200&font-size=0.33`;
+            };
+        }
+
+        function renderV2() {
+            const itemsPerPage = 7;
+            const container = document.getElementById('v2-container');
+            container.innerHTML = ''; 
+
+            for (let i = 0; i < itemsPerPage; i++) {
+                const dataIndex = currentIndex + i;
+                if (dataIndex >= presentationData.length) break;
+
+                const data = presentationData[dataIndex];
+                let photoSrc = data.photo;
+                if (!photoSrc || photoSrc.trim() === "") {
+                    photoSrc = `https://ui-avatars.com/api/?name=${data.name}&background=random&size=200&font-size=0.33`;
+                }
+
+                const itemHtml = `
+                    <div class="v2-item">
+                        <div class="v2-name">${data.name}</div>
+                        <div class="v2-photo-mask">
+                            <img src="${photoSrc}" alt="${data.name}" onerror="this.src='https://ui-avatars.com/api/?name=${data.name}&background=random&size=200&font-size=0.33'">
+                        </div>
+                        <div class="v2-industry">${data.industry}</div>
+                    </div>
+                `;
+                container.innerHTML += itemHtml;
+            }
+        }
+
+        function nextSlide() {
+            const step = currentLayout === 'v1' ? 2 : 7;
+            if (currentIndex + step < presentationData.length) {
+                currentIndex += step;
+                renderSlide();
+            }
+        }
+
+        function prevSlide() {
+            const step = currentLayout === 'v1' ? 2 : 7;
+            if (currentIndex - step >= 0) {
+                currentIndex -= step;
+                renderSlide();
+            } else if (currentIndex > 0) {
+                currentIndex = 0;
+                renderSlide();
+            }
+        }
+
+        function toggleControls() {
+            document.getElementById('controls').classList.toggle('visible');
+        }
+    </script>
+</body>
+</html>
