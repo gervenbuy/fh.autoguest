@@ -170,9 +170,9 @@
                 </div>
 
                 <!-- Right Card -->
-                <div class="flex-1 max-w-xl relative group">
+                <div id="right-card-wrapper" class="flex-1 max-w-xl relative group invisible">
                     <div class="absolute -top-16 left-4 text-5xl font-bold text-gray-400" id="idx-1">02</div>
-                    <div class="bg-white rounded-3xl p-8 card-shadow h-full flex flex-col relative invisible"> <!-- Initially invisible -->
+                    <div class="bg-white rounded-3xl p-8 card-shadow h-full flex flex-col relative">
                         
                         <div class="flex gap-6 mb-6">
                             <div class="w-40 h-40 flex-shrink-0 profile-mask shadow-sm">
@@ -372,6 +372,21 @@
             return { id, gid };
         }
 
+        function processPhotoUrl(url) {
+            if (!url) return "";
+            url = url.trim();
+            // Try to fix Google Drive View links to Direct links
+            // Pattern: https://drive.google.com/file/d/VIDEO_ID/view?usp=sharing
+            // Target: https://drive.google.com/uc?export=view&id=VIDEO_ID
+            if (url.includes('drive.google.com') && url.includes('/view')) {
+                const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+                if (idMatch && idMatch[1]) {
+                    return `https://drive.google.com/uc?export=view&id=${idMatch[1]}`;
+                }
+            }
+            return url;
+        }
+
         async function fetchGoogleSheet() {
             const url = document.getElementById('sheet-url').value.trim();
             const statusEl = document.getElementById('fetch-status');
@@ -394,13 +409,15 @@
             // Use Google CSV Export
             const googleCsvUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
             
-            // Fallback strategy
+            // Fallback strategy with 3 proxies
             const proxies = [
                 (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
-                (target) => `https://corsproxy.io/?${encodeURIComponent(target)}`
+                (target) => `https://corsproxy.io/?${encodeURIComponent(target)}`,
+                (target) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(target)}`
             ];
 
             let csvText = null;
+            let lastError = null;
 
             for (const proxyGen of proxies) {
                 try {
@@ -411,21 +428,22 @@
                     csvText = await response.text();
                     
                     if (csvText && csvText.trim().startsWith("<")) {
-                         throw new Error("Received HTML instead of CSV");
+                         throw new Error("Received HTML instead of CSV (Proxy blocked)");
                     }
 
                     if (csvText) break; // Success
                 } catch (e) {
                     console.warn("Proxy failed:", e);
+                    lastError = e;
                 }
             }
 
             if (!csvText) {
-                statusEl.innerText = '讀取失敗: 請確認權限';
+                statusEl.innerText = '讀取失敗';
                 statusEl.className = 'text-xs text-red-400 h-4 mt-1';
                 btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> 載入 Sheet 資料';
                 btn.disabled = false;
-                alert("讀取失敗！可能原因：\n1. Google Sheet 權限未設為「知道連結者皆可檢視」\n2. 網路封鎖了代理伺服器");
+                alert(`讀取失敗！所有代理伺服器皆無法連線。\n請確認：\n1. Google Sheet 權限為「知道連結者皆可檢視」\n2. 網址正確\n(最後錯誤: ${lastError?.message})`);
                 return;
             }
 
@@ -439,36 +457,46 @@
                         let headerRowIndex = -1;
                         for(let i=0; i<Math.min(20, rawData.length); i++) {
                             const rowStr = JSON.stringify(rawData[i]);
+                            // Relaxed matching for header row
                             if (rowStr.includes("姓名") || rowStr.includes("Name")) {
                                 headerRowIndex = i;
                                 break;
                             }
                         }
 
-                        if (headerRowIndex === -1) throw new Error("找不到含有「姓名」的標題列");
+                        if (headerRowIndex === -1) throw new Error("找不到含有「姓名」的標題列 (請確認第一列是標題)");
 
                         const headers = rawData[headerRowIndex].map(h => h.trim());
                         const findCol = (keywords) => headers.findIndex(h => keywords.some(k => h.includes(k)));
                         
+                        // Expanded Keyword List
                         const colMap = {
                             name: findCol(["姓名", "Name"]),
                             inviter: findCol(["邀請人", "Inviter"]),
                             industry: findCol(["產業", "Industry", "行業"]),
                             company: findCol(["公司", "Company"]),
                             coop: findCol(["合作", "Coop", "對象"]),
-                            photo: findCol(["照片", "Photo", "Image"])
+                            // Added "圖床", "連結", "Link", "URL", "Url"
+                            photo: findCol(["照片", "Photo", "Image", "圖片", "頭像", "圖床", "連結", "Link", "URL", "Url"])
                         };
 
+                        // Debug Check
                         if (colMap.name === -1) throw new Error("找不到「姓名」欄位");
-
+                        
+                        // Check other columns and warn if missing (but don't crash)
+                        let missingCols = [];
+                        if (colMap.inviter === -1) missingCols.push("邀請人");
+                        if (colMap.industry === -1) missingCols.push("產業");
+                        
                         const newData = [];
                         let idCounter = 1;
 
                         for(let i = headerRowIndex + 1; i < rawData.length; i++) {
                             const row = rawData[i];
+                            // Must have name to be valid
                             if (!row[colMap.name] || row[colMap.name].trim() === "") continue;
 
-                            let photoUrl = colMap.photo > -1 ? row[colMap.photo] : "";
+                            let photoUrl = colMap.photo > -1 ? processPhotoUrl(row[colMap.photo]) : "";
                             
                             newData.push({
                                 id: String(idCounter).padStart(2, '0'),
@@ -482,14 +510,18 @@
                             idCounter++;
                         }
 
-                        if (newData.length === 0) throw new Error("沒有抓取到有效資料");
+                        if (newData.length === 0) throw new Error("沒有抓取到有效資料 (可能是欄位對應錯誤)");
 
                         presentationData = newData;
                         localStorage.setItem('presentationData', JSON.stringify(presentationData));
                         
-                        statusEl.innerText = `成功載入 ${newData.length} 筆資料！`;
+                        statusEl.innerText = `成功! ${newData.length} 筆資料`;
                         statusEl.className = 'text-xs text-green-400 h-4 mt-1';
                         
+                        if (missingCols.length > 0) {
+                            alert(`成功載入，但部分欄位未找到：\n${missingCols.join(", ")}\n請確認 Excel 標題名稱。`);
+                        }
+
                         currentIndex = 0;
                         renderSlide();
                         setTimeout(() => toggleControls(), 1500);
@@ -499,7 +531,7 @@
 
             } catch (error) {
                 console.error(error);
-                statusEl.innerText = '解析失敗: ' + error.message;
+                statusEl.innerText = '解析錯誤';
                 statusEl.className = 'text-xs text-red-400 h-4 mt-1';
                 alert("資料解析錯誤：" + error.message);
             } finally {
@@ -582,24 +614,20 @@
                 document.getElementById('idx-0').innerText = person1.id || (currentIndex + 1).toString().padStart(2, '0');
             }
 
-            // Card 2
-            const card2El = document.getElementById('idx-1').parentElement.parentElement; // The bg-white div is the parent of parent of idx-1? No, idx-1 is inside.
-            // Wait, DOM structure in Tailwind version:
-            // <div class="flex-1 max-w-xl relative group"> <div class="absolute ...">02</div> <div class="bg-white ..."> ... </div> </div>
-            // The "bg-white" div is the card itself.
-            
-            // Correct way to toggle visibility:
-            // The logic used in previous Tailwind version: document.getElementById('idx-1').parentElement.style.visibility = 'visible';
-            // Here idx-1 is .absolute.-top-16. Its parent is the wrapper div "relative group".
+            // Card 2 - FIX: Control visibility on the wrapper
+            const rightWrapper = document.getElementById('right-card-wrapper');
             
             if (person2) {
-                document.getElementById('idx-1').parentElement.classList.remove('invisible');
-                document.getElementById('idx-1').parentElement.classList.add('visible');
+                // Show the wrapper
+                rightWrapper.classList.remove('invisible');
+                rightWrapper.classList.add('visible');
+                
                 updateCardV1(1, person2);
                 document.getElementById('idx-1').innerText = person2.id || (currentIndex + 2).toString().padStart(2, '0');
             } else {
-                document.getElementById('idx-1').parentElement.classList.remove('visible');
-                document.getElementById('idx-1').parentElement.classList.add('invisible');
+                // Hide the wrapper (maintains layout space)
+                rightWrapper.classList.remove('visible');
+                rightWrapper.classList.add('invisible');
             }
 
             // Footer Next Logic
