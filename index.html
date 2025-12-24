@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>商務引薦自動排版系統 (Tailwind 美觀版)</title>
+    <title>商務引薦自動排版系統 (強效圖片版)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome -->
@@ -251,7 +251,7 @@
                      <button onclick="openPostModal()" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-1 rounded text-sm flex items-center justify-center gap-2">
                         <i class="fa-brands fa-line"></i> 貼文
                     </button>
-                    <button onclick="exportToPng()" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-1 rounded text-sm flex items-center justify-center gap-2">
+                    <button onclick="exportToPng()" id="btn-export" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-1 rounded text-sm flex items-center justify-center gap-2">
                         <i class="fa-solid fa-camera"></i> PNG
                     </button>
                 </div>
@@ -375,11 +375,16 @@
         function processPhotoUrl(url) {
             if (!url) return "";
             url = url.trim();
-            // Try to fix Google Drive View links to Direct links
-            // Pattern: https://drive.google.com/file/d/VIDEO_ID/view?usp=sharing
-            // Target: https://drive.google.com/uc?export=view&id=VIDEO_ID
-            if (url.includes('drive.google.com') && url.includes('/view')) {
+            
+            // 1. Google Drive 處理
+            if (url.includes('drive.google.com') && url.includes('/d/')) {
                 const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+                if (idMatch && idMatch[1]) {
+                    return `https://drive.google.com/uc?export=view&id=${idMatch[1]}`;
+                }
+            }
+            if (url.includes('drive.google.com') && url.includes('id=')) {
+                const idMatch = url.match(/id=([a-zA-Z0-9-_]+)/);
                 if (idMatch && idMatch[1]) {
                     return `https://drive.google.com/uc?export=view&id=${idMatch[1]}`;
                 }
@@ -409,7 +414,6 @@
             // Use Google CSV Export
             const googleCsvUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
             
-            // Fallback strategy with 3 proxies
             const proxies = [
                 (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
                 (target) => `https://corsproxy.io/?${encodeURIComponent(target)}`,
@@ -430,8 +434,7 @@
                     if (csvText && csvText.trim().startsWith("<")) {
                          throw new Error("Received HTML instead of CSV (Proxy blocked)");
                     }
-
-                    if (csvText) break; // Success
+                    if (csvText) break; 
                 } catch (e) {
                     console.warn("Proxy failed:", e);
                     lastError = e;
@@ -443,7 +446,7 @@
                 statusEl.className = 'text-xs text-red-400 h-4 mt-1';
                 btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> 載入 Sheet 資料';
                 btn.disabled = false;
-                alert(`讀取失敗！所有代理伺服器皆無法連線。\n請確認：\n1. Google Sheet 權限為「知道連結者皆可檢視」\n2. 網址正確\n(最後錯誤: ${lastError?.message})`);
+                alert(`讀取失敗！請確認 Sheet 權限與網址。\n(${lastError?.message})`);
                 return;
             }
 
@@ -453,11 +456,9 @@
                     header: false, 
                     complete: function(results) {
                         const rawData = results.data;
-                        
                         let headerRowIndex = -1;
                         for(let i=0; i<Math.min(20, rawData.length); i++) {
                             const rowStr = JSON.stringify(rawData[i]);
-                            // Relaxed matching for header row
                             if (rowStr.includes("姓名") || rowStr.includes("Name")) {
                                 headerRowIndex = i;
                                 break;
@@ -469,21 +470,17 @@
                         const headers = rawData[headerRowIndex].map(h => h.trim());
                         const findCol = (keywords) => headers.findIndex(h => keywords.some(k => h.includes(k)));
                         
-                        // Expanded Keyword List
                         const colMap = {
                             name: findCol(["姓名", "Name"]),
                             inviter: findCol(["邀請人", "Inviter"]),
                             industry: findCol(["產業", "Industry", "行業"]),
                             company: findCol(["公司", "Company"]),
                             coop: findCol(["合作", "Coop", "對象"]),
-                            // Added "圖床", "連結", "Link", "URL", "Url"
                             photo: findCol(["照片", "Photo", "Image", "圖片", "頭像", "圖床", "連結", "Link", "URL", "Url"])
                         };
 
-                        // Debug Check
                         if (colMap.name === -1) throw new Error("找不到「姓名」欄位");
                         
-                        // Check other columns and warn if missing (but don't crash)
                         let missingCols = [];
                         if (colMap.inviter === -1) missingCols.push("邀請人");
                         if (colMap.industry === -1) missingCols.push("產業");
@@ -493,7 +490,6 @@
 
                         for(let i = headerRowIndex + 1; i < rawData.length; i++) {
                             const row = rawData[i];
-                            // Must have name to be valid
                             if (!row[colMap.name] || row[colMap.name].trim() === "") continue;
 
                             let photoUrl = colMap.photo > -1 ? processPhotoUrl(row[colMap.photo]) : "";
@@ -510,7 +506,7 @@
                             idCounter++;
                         }
 
-                        if (newData.length === 0) throw new Error("沒有抓取到有效資料 (可能是欄位對應錯誤)");
+                        if (newData.length === 0) throw new Error("沒有抓取到有效資料");
 
                         presentationData = newData;
                         localStorage.setItem('presentationData', JSON.stringify(presentationData));
@@ -540,62 +536,102 @@
             }
         }
 
-        // --- Post Generation Logic ---
-        function generatePostText() {
-            let text = "";
-            presentationData.forEach(p => {
-                text += `👨 ${p.name}｜${p.company} 👀\n`;
-                text += `產業別：${p.industry} 💡\n`;
-                text += `合作對象：${p.coop} 📍\n`;
-                text += `邀請人：${p.inviter}\n`;
-                text += `--------------------------------\n`; // Separator
-            });
-            return text;
+        // --- Image Proxy & Base64 Converter ---
+        async function getBase64Image(url) {
+            if (!url) return null;
+            // Use proxies to fetch image blob
+            const proxies = [
+                (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
+                (target) => `https://corsproxy.io/?${encodeURIComponent(target)}`
+            ];
+
+            for (const proxyGen of proxies) {
+                try {
+                    const proxyUrl = proxyGen(url);
+                    const response = await fetch(proxyUrl);
+                    if (!response.ok) throw new Error('Fetch failed');
+                    const blob = await response.blob();
+                    return new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.readAsDataURL(blob);
+                    });
+                } catch (e) {
+                    console.warn("Image proxy failed:", e);
+                }
+            }
+            return null; // All failed
         }
 
-        function openPostModal() {
-            const text = generatePostText();
-            document.getElementById('post-output').value = text;
-            document.getElementById('post-modal').classList.add('flex');
-            toggleControls(); 
-        }
-
-        function closePostModal() {
-            document.getElementById('post-modal').classList.remove('flex');
-        }
-
-        function copyPostText() {
-            const textarea = document.getElementById('post-output');
-            textarea.select();
-            document.execCommand('copy');
-            alert("已複製到剪貼簿！");
-        }
-
-        function exportToPng() {
+        // --- Export Logic with Base64 Injection ---
+        async function exportToPng() {
             const element = document.getElementById("capture-area");
             const controls = document.getElementById("controls");
-            const btn = document.querySelector("button[onclick='toggleControls()']");
-            
-            // Hide UI
-            controls.style.visibility = 'hidden';
-            btn.style.visibility = 'hidden';
+            const toggleBtn = document.querySelector("button[onclick='toggleControls()']");
+            const exportBtn = document.getElementById("btn-export");
 
-            html2canvas(element, {
-                backgroundColor: "#f0f2f5", 
-                scale: 2,
-                scrollY: -window.scrollY 
-            }).then(canvas => {
-                // Restore UI
-                controls.style.visibility = '';
-                btn.style.visibility = '';
+            // UI Feedback
+            const originalBtnText = exportBtn.innerHTML;
+            exportBtn.innerHTML = '<div class="loader"></div> 處理圖片中...';
+            exportBtn.disabled = true;
+            controls.style.visibility = 'hidden';
+            toggleBtn.style.visibility = 'hidden';
+
+            try {
+                // 1. Find all images in the capture area
+                const images = element.querySelectorAll('img');
+                const originalSrcs = [];
+
+                // 2. Fetch and replace with Base64
+                for (let i = 0; i < images.length; i++) {
+                    const img = images[i];
+                    originalSrcs.push(img.src); // Save original
+                    
+                    if (img.src && !img.src.startsWith('data:')) {
+                        // Attempt to get Base64
+                        const base64 = await getBase64Image(img.src);
+                        if (base64) {
+                            img.src = base64; // Replace with Base64
+                        }
+                    }
+                }
+
+                // 3. Wait a moment for Base64 to render
+                await new Promise(r => setTimeout(r, 500));
+
+                // 4. Capture
+                const canvas = await html2canvas(element, {
+                    backgroundColor: "#f0f2f5", 
+                    scale: 2,
+                    scrollY: -window.scrollY,
+                    useCORS: true 
+                });
+
+                // 5. Restore Original Sources
+                for (let i = 0; i < images.length; i++) {
+                    images[i].src = originalSrcs[i];
+                }
+
+                // 6. Download
                 const link = document.createElement('a');
                 link.download = `BNI_Presentation.png`;
                 link.href = canvas.toDataURL();
                 link.click();
-            });
+
+            } catch (e) {
+                console.error(e);
+                alert("圖片匯出失敗，請稍後再試。");
+            } finally {
+                // Restore UI
+                controls.style.visibility = '';
+                toggleBtn.style.visibility = '';
+                exportBtn.innerHTML = originalBtnText;
+                exportBtn.disabled = false;
+            }
         }
 
-        // --- Core Render Logic ---
+
+        // --- Render Logic ---
         function renderSlide() {
             if (currentLayout === 'v1') {
                 renderV1();
@@ -608,29 +644,22 @@
             const person1 = presentationData[currentIndex];
             const person2 = presentationData[currentIndex + 1];
 
-            // Card 1
             if (person1) {
                 updateCardV1(0, person1);
                 document.getElementById('idx-0').innerText = person1.id || (currentIndex + 1).toString().padStart(2, '0');
             }
 
-            // Card 2 - FIX: Control visibility on the wrapper
             const rightWrapper = document.getElementById('right-card-wrapper');
-            
             if (person2) {
-                // Show the wrapper
                 rightWrapper.classList.remove('invisible');
                 rightWrapper.classList.add('visible');
-                
                 updateCardV1(1, person2);
                 document.getElementById('idx-1').innerText = person2.id || (currentIndex + 2).toString().padStart(2, '0');
             } else {
-                // Hide the wrapper (maintains layout space)
                 rightWrapper.classList.remove('visible');
                 rightWrapper.classList.add('invisible');
             }
 
-            // Footer Next Logic
             const next1 = presentationData[currentIndex + 2];
             const next2 = presentationData[currentIndex + 3];
             let nextText = "";
@@ -655,6 +684,8 @@
             if (!photoSrc || photoSrc.trim() === "") {
                 photoSrc = `https://ui-avatars.com/api/?name=${data.name}&background=random&size=200&font-size=0.33`;
             }
+            // Removed crossorigin from here to fix Display Issue
+            imgEl.removeAttribute('crossorigin');
             imgEl.src = photoSrc;
             imgEl.onerror = function() {
                 this.src = `https://ui-avatars.com/api/?name=${data.name}&background=random&size=200&font-size=0.33`;
@@ -676,6 +707,7 @@
                     photoSrc = `https://ui-avatars.com/api/?name=${data.name}&background=random&size=200&font-size=0.33`;
                 }
 
+                // Removed crossorigin here too
                 const itemHtml = `
                     <div class="flex flex-col items-center mb-4 w-full px-1">
                         <div class="v2-name truncate w-full text-center">${data.name}</div>
@@ -706,6 +738,37 @@
                 currentIndex = 0;
                 renderSlide();
             }
+        }
+        
+        // --- Modal & Text Logic ---
+        function generatePostText() {
+            let text = "";
+            presentationData.forEach(p => {
+                text += `👨 ${p.name}｜${p.company} 👀\n`;
+                text += `產業別：${p.industry} 💡\n`;
+                text += `合作對象：${p.coop} 📍\n`;
+                text += `邀請人：${p.inviter}\n`;
+                text += `--------------------------------\n`; 
+            });
+            return text;
+        }
+
+        function openPostModal() {
+            const text = generatePostText();
+            document.getElementById('post-output').value = text;
+            document.getElementById('post-modal').classList.add('flex');
+            toggleControls(); 
+        }
+
+        function closePostModal() {
+            document.getElementById('post-modal').classList.remove('flex');
+        }
+
+        function copyPostText() {
+            const textarea = document.getElementById('post-output');
+            textarea.select();
+            document.execCommand('copy');
+            alert("已複製到剪貼簿！");
         }
 
         function toggleControls() {
